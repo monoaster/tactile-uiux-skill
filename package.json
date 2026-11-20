@@ -1,0 +1,24 @@
+{
+  "name": "tactile-uiux-skill",
+  "version": "1.1.0",
+  "description": "Design and engineering guideline skill for building graphic, physically responsive tactile UI components, with a reference component and an automated checker.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "tactile-uiux-skill": "./bin/install.mjs"
+  },
+  "scripts": {
+    "check": "node scripts/check.mjs examples/spline-eq.html"
+  },
+  "files": [
+    "SKILL.md",
+    "CHANGELOG.md",
+    "references/",
+    "examples/",
+    "scripts/",
+    "bin/"
+  ],
+  "devDependencies": {
+    "puppeteer-core": "^24.0.0"
+  }
+}

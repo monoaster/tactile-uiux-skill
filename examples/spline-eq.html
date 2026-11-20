@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parametric EQ</title>
+<style>
+/* Theme & surface tokens. Dark default, light via prefers-color-scheme. See references/primitives.md §1 */
+:root {
+  color-scheme: dark;
+  --tu-canvas: #050608;
+  --tu-well: #080a0f;
+  --tu-surface: linear-gradient(165deg, rgba(22,25,34,.96) 0%, rgba(11,13,18,.98) 100%);
+  --tu-border: rgba(255,255,255,.085);
+  --tu-rim: rgba(255,255,255,.09);
+  --tu-grid: rgba(255,255,255,.045);
+  --tu-grid-major: rgba(255,255,255,.13);
+  --tu-text: #f2f4f8;
+  --tu-muted: #8b93a6;
+  --tu-accent: #38bdf8;
+  --tu-accent-2: #a855f7;
+  --tu-bead: #ffffff;
+  --tu-glass-hi: rgba(255,255,255,.17);
+  --tu-glass-lo: rgba(255,255,255,.05);
+  --tu-sheen: rgba(255,255,255,.26);
+  --tu-focus: var(--tu-accent);
+  --tu-radius-card: 20px;
+  --tu-radius-stage: 13px;
+  --tu-radius-pill: 999px;
+  --tu-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --tu-canvas: #e9ecf2;
+    --tu-well: #f6f7fa;
+    --tu-surface: linear-gradient(165deg, rgba(255,255,255,.98) 0%, rgba(243,245,249,.98) 100%);
+    --tu-border: rgba(10,14,25,.1);
+    --tu-rim: rgba(255,255,255,.9);
+    --tu-grid: rgba(10,14,25,.06);
+    --tu-grid-major: rgba(10,14,25,.2);
+    --tu-text: #131722;
+    --tu-muted: #596176;
+    --tu-accent: #0284c7;
+    --tu-accent-2: #9333ea;
+    --tu-bead: #ffffff;
+    --tu-glass-hi: rgba(255,255,255,.95);
+    --tu-glass-lo: rgba(255,255,255,.5);
+    --tu-sheen: rgba(255,255,255,.8);
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--tu-canvas); color: var(--tu-text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+body { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
+
+.tu-card {
+  width: 100%; max-width: 760px; padding: 16px; display: grid; gap: 14px;
+  background: var(--tu-surface); border: 1px solid var(--tu-border); border-radius: var(--tu-radius-card);
+  box-shadow: inset 0 1px 0 var(--tu-rim), 0 24px 60px rgba(0,0,0,.35);
+}
+[data-slot="header"] { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 2px; }
+[data-slot="header"] .label { font-size: 14px; font-weight: 600; }
+[data-slot="header"] .tag { font: 12px var(--tu-mono); color: var(--tu-muted); font-variant-numeric: tabular-nums; }
+
+.tu-stage {
+  position: relative; background: var(--tu-well); border: 1px solid var(--tu-border); border-radius: var(--tu-radius-stage);
+  overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; height: 264px;
+}
+.tu-stage canvas { position: absolute; left: 0; top: 0; display: block; }
+.tu-node {
+  position: absolute; left: 0; top: 0; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%;
+  touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; outline: none; will-change: transform;
+}
+.tu-node.drag { cursor: grabbing; }
+.tu-node:focus-visible { box-shadow: 0 0 0 2px var(--tu-well), 0 0 0 4px var(--tu-focus); }
+
+[data-slot="telemetry"] { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px 16px; align-items: center; padding: 0 2px; }
+.ro .name { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tu-muted); }
+.ro .name i { width: 7px; height: 7px; border-radius: 50%; }
+.ro .val { margin-top: 2px; font: 600 14px var(--tu-mono); font-variant-numeric: tabular-nums; white-space: nowrap; display: flex; gap: 10px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border: 1px solid var(--tu-border);
+  border-radius: var(--tu-radius-pill); background: var(--tu-well); font-size: 12px; color: var(--tu-text); min-width: 78px; justify-content: center;
+}
+.pill i { width: 6px; height: 6px; border-radius: 50%; background: var(--tu-accent); }
+.pill.custom i { background: var(--tu-muted); }
+
+.seg { position: relative; display: flex; padding: 4px; background: var(--tu-well); border: 1px solid var(--tu-border); border-radius: var(--tu-radius-pill); }
+.seg button {
+  position: relative; z-index: 1; flex: 1; border: 0; background: none; padding: 12px 0; border-radius: var(--tu-radius-pill);
+  font: 600 14px/1 system-ui, sans-serif; color: var(--tu-muted); cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.seg button[aria-checked="true"] { color: var(--tu-text); }
+.seg button:focus-visible { outline: 2px solid var(--tu-focus); outline-offset: 2px; }
+.cap {
+  position: absolute; z-index: 0; left: 0; top: 4px; bottom: 4px; width: 0; border-radius: var(--tu-radius-pill); overflow: hidden;
+  background: linear-gradient(180deg, var(--tu-glass-hi), var(--tu-glass-lo));
+  box-shadow: inset 0 1px 0 var(--tu-rim), 0 0 0 1px var(--tu-border), 0 5px 16px rgba(0,0,0,.3);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); will-change: transform, width; transition: opacity .2s linear;
+}
+.cap.custom { opacity: .3; }
+.cap .sheen { position: absolute; inset: 0; background: linear-gradient(115deg, transparent 25%, var(--tu-sheen) 50%, transparent 75%); }
+
+@media (max-width: 520px) {
+  .tu-card { padding: 12px; }
+  [data-slot="telemetry"] { grid-template-columns: 1fr 1fr; }
+  [data-slot="telemetry"] .pill { grid-column: 1 / -1; justify-self: start; }
+}
+</style>
+</head>
+<body>
+<main class="tu-card">
+  <div data-slot="header">
+    <span class="label">Parametric EQ</span>
+    <span class="tag">20 Hz – 20 kHz</span>
+  </div>
+
+  <div class="tu-stage" id="stage" data-tu-drag>
+    <canvas id="cv"></canvas>
+    <div class="tu-node" id="n-low"  data-id="low"  role="slider" tabindex="0" aria-label="Low shelf. Arrow keys change frequency and gain" aria-valuemin="40" aria-valuemax="500" aria-valuenow="120"></div>
+    <div class="tu-node" id="n-high" data-id="high" role="slider" tabindex="0" aria-label="High peak. Arrow keys change frequency and gain" aria-valuemin="1000" aria-valuemax="16000" aria-valuenow="6000"></div>
+  </div>
+
+  <div data-slot="telemetry">
+    <div class="ro"><div class="name"><i style="background:var(--tu-accent)"></i>Low shelf</div><div class="val"><span id="lf" data-tu-readout></span><span id="lg" data-tu-readout></span></div></div>
+    <div class="ro"><div class="name"><i style="background:var(--tu-accent-2)"></i>High peak</div><div class="val"><span id="hf" data-tu-readout></span><span id="hg" data-tu-readout></span></div></div>
+    <span class="pill" id="pill"><i></i><span id="pillt">Warm</span></span>
+  </div>
+
+  <div class="seg" id="seg" role="radiogroup" aria-label="Preset">
+    <div class="cap" id="cap"><div class="sheen" id="sheen"></div></div>
+    <button role="radio" data-p="warm"  aria-checked="true"  tabindex="0">Warm</button>
+    <button role="radio" data-p="vocal" aria-checked="false" tabindex="-1">Vocal</button>
+    <button role="radio" data-p="flat"  aria-checked="false" tabindex="-1">Flat</button>
+  </div>
+</main>
+
+<script>
+(() => {
+  /* Motion & physics config. Edit here, not inside components. */
+  const TU = {
+    spring: { snappy: { stiffness: 380, damping: 28, mass: 1 }, lush: { stiffness: 220, damping: 18, mass: 1 } },
+    response: { stretchFactor: .04, maxStretch: .6, trailLength: 6, trailMinDist: 2.5, trailTtl: 350 },
+    rest: { norm: { pos: .001, vel: .01 }, db: { pos: .005, vel: .02 }, px: { pos: .05, vel: .5 }, level: { pos: .002, vel: .01 } },
+    grid: 24, dbPerRow: 3,
+  };
+  const PRESETS = {
+    warm:  { low: [120, 4.5], high: [6000, -3] },
+    vocal: { low: [160, -3],  high: [3500, 4.5] },
+    flat:  { low: [100, 0],   high: [4000, 0] },
+  };
+
+  const $ = id => document.getElementById(id);
+  const stage = $('stage'), cv = $('cv'), ctx = cv.getContext('2d'), seg = $('seg'), cap = $('cap'), sheen = $('sheen');
+  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+  /* Spring (references/primitives.md §3): standard damped spring, semi-implicit Euler, per-unit rest thresholds */
+  class Spring {
+    constructor(x, rest, cfg = TU.spring.lush) { this.x = x; this.v = 0; this.t = x; this.cfg = cfg; this.rest = rest; }
+    set(t, cfg) { if (cfg) this.cfg = cfg; this.t = t; if (REDUCED) { this.x = t; this.v = 0; } }
+    step(dt) {
+      const { stiffness: k, damping: c, mass: m } = this.cfg;
+      this.v += ((k * (this.t - this.x) - c * this.v) / m) * dt;
+      this.x += this.v * dt;
+      if (Math.abs(this.t - this.x) > this.rest.pos || Math.abs(this.v) > this.rest.vel) return true;
+      this.x = this.t; this.v = 0; return false;
+    }
+  }
+
+  /* Ghost trail: sampled by distance, expired by time (primitives §4) */
+  function createTrail({ length, minDist, ttl }) {
+    const pts = []; let lx = null, ly = 0;     // last sampled position, kept apart from pts so an empty trail never re-arms itself
+    return {
+      push(x, y, now) {
+        if (lx === null) { lx = x; ly = y; return; }
+        if (Math.hypot(x - lx, y - ly) >= minDist) { pts.unshift({ x: lx, y: ly, t: now }); lx = x; ly = y; if (pts.length > length) pts.length = length; }
+      },
+      prune(now) { while (pts.length && now - pts[pts.length - 1].t > ttl) pts.pop(); },
+      get active() { return pts.length > 0; },
+      draw(c, now, [r, g, b], hx, hy, act, core) {
+        for (let i = pts.length - 1; i >= 0; i--) {
+          const age = 1 - Math.min(1, (now - pts[i].t) / ttl);
+          c.beginPath(); c.arc(pts[i].x, pts[i].y, Math.max(1.5, 3.5 - i * .4), 0, 7);
+          c.fillStyle = `rgba(${r},${g},${b},${Math.max(.08, .6 - i * .08) * age})`; c.fill();
+        }
+        c.save(); c.shadowColor = `rgba(${r},${g},${b},.9)`; c.shadowBlur = 16;
+        c.beginPath(); c.arc(hx, hy, 8.5, 0, 7); c.fillStyle = `rgba(${r},${g},${b},${.35 + .25 * act})`; c.fill(); c.restore();
+        c.beginPath(); c.arc(hx, hy, 5.5, 0, 7); c.fillStyle = core; c.fill();
+      },
+    };
+  }
+
+  /* Tokens read from CSS so a theme override (or the OS scheme) just works */
+  const hex = s => { s = s.trim().replace('#', ''); return [0, 2, 4].map(i => parseInt(s.slice(i, i + 2), 16)); };
+  let C = {};
+  const readTokens = () => {
+    const cs = getComputedStyle(document.documentElement), g = n => cs.getPropertyValue(n).trim();
+    C = { a: hex(g('--tu-accent')), b: hex(g('--tu-accent-2')), grid: g('--tu-grid'), major: g('--tu-grid-major'), muted: g('--tu-muted'), bead: g('--tu-bead') };
+  };
+  const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+  const mixc = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+
+  /* Model: normalized log-frequency nx (0..1 over 20 Hz..20 kHz) and gain in dB */
+  const LF0 = Math.log10(20), LF1 = Math.log10(20000);
+  const nxOf = f => (Math.log10(f) - LF0) / (LF1 - LF0);
+  const lfOf = nx => LF0 + nx * (LF1 - LF0);
+  const mkNode = (id, range, gl, f, g, act, rf, rg) => ({
+    id, el: $('n-' + id), range, gl, rf: $(rf), rg: $(rg), shown: '',
+    nx: new Spring(nxOf(f), TU.rest.norm), g: new Spring(g, TU.rest.db), act: new Spring(act, TU.rest.level),
+    trail: createTrail({ length: TU.response.trailLength, minDist: TU.response.trailMinDist, ttl: TU.response.trailTtl }),
+  });
+  const LOW = mkNode('low', [nxOf(40), nxOf(500)], 6, 120, 4.5, .8, 'lf', 'lg');
+  const HIGH = mkNode('high', [nxOf(1000), nxOf(16000)], 9, 6000, -3, .3, 'hf', 'hg');
+  const nodes = [LOW, HIGH];
+  const cp = { x: new Spring(0, TU.rest.px), w: new Spring(0, TU.rest.px) };
+  let active = LOW, dragging = null, preset = 'warm', lastPreset = 'warm', visible = true;
+  let W = 0, H = 0, half = 5, dpr = 1;
+
+  /* Response. The shelf is scaled so the curve passes exactly through the low node. */
+  const shelfAt = lf => { const S = x => 1 / (1 + Math.exp((x - lfOf(LOW.nx.x) - .12) * 5.5)); return LOW.g.x * S(lf) / S(lfOf(LOW.nx.x)); };
+  const peakAt = lf => { const d = lf - lfOf(HIGH.nx.x); return HIGH.g.x * Math.exp(-(d * d) / (2 * .17 * .17)); };
+  const response = lf => shelfAt(lf) + peakAt(lf);
+
+  const X = nx => nx * W;
+  const pxPerDb = () => TU.grid / TU.dbPerRow;
+  const Y = db => H / 2 - db * pxPerDb();
+  const dbOf = y => (H / 2 - y) / pxPerDb();
+  const beadPos = n => [X(n.nx.x), Y(response(lfOf(n.nx.x)))];
+  // gain parameter that puts the curve under the pointer at this frequency (bead stays on the line)
+  const gainForDb = (n, nx, db) => db - (n === LOW ? peakAt(lfOf(nx)) : shelfAt(lfOf(nx)));
+
+  const fmtHz = nx => { const f = Math.pow(10, lfOf(nx)); return f >= 1000 ? (f / 1000).toFixed(2) + ' kHz' : Math.round(f) + ' Hz'; };
+  const fmtDb = g => { const r = Math.round(g * 10) / 10; return (r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r).toFixed(1) + ' dB'; };
+  function readouts() {
+    for (const n of nodes) {
+      const f = fmtHz(n.nx.x), g = fmtDb(n.g.x);
+      if (f + g !== n.shown) { n.shown = f + g; n.rf.textContent = f; n.rg.textContent = g; }
+    }
+  }
+  function aria() {
+    for (const n of nodes) {
+      n.el.setAttribute('aria-valuenow', Math.round(Math.pow(10, lfOf(n.nx.t))));
+      n.el.setAttribute('aria-valuetext', `${fmtHz(n.nx.t)}, ${fmtDb(n.g.t)}`);
+    }
+  }
+
+  /* Loop: sleeps when springs are settled AND trails have expired */
+  let raf = 0, last = 0;
+  const wake = () => { if (!raf && visible) { last = performance.now(); raf = requestAnimationFrame(tick); } };
+  function tick(now) {
+    let dt = Math.min(.032, (now - last) / 1000 || .016); last = now;
+    let awake = false;
+    for (; dt > 1e-6; dt -= 1 / 120) awake = step(Math.min(dt, 1 / 120)) || awake;
+    for (const n of nodes) {
+      if (!REDUCED) { const p = beadPos(n); n.trail.push(p[0], p[1], now); }
+      n.trail.prune(now); awake = n.trail.active || awake;
+    }
+    readouts(); render(now);
+    raf = awake ? requestAnimationFrame(tick) : 0;
+  }
+  function step(dt) {
+    let awake = false;
+    for (const n of nodes) {
+      n.act.set(dragging === n ? 1 : active === n ? .8 : .3);
+      for (const s of [n.nx, n.g, n.act]) awake = s.step(dt) || awake;
+    }
+    return cp.x.step(dt) | cp.w.step(dt) | awake;
+  }
+
+  function render(now) {
+    if (!W) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    const cy = H / 2;
+
+    for (const n of nodes) { // multi-lobe volumetric glows tracking each bead
+      const [x, y] = beadPos(n), col = n.id === 'low' ? C.a : C.b;
+      for (const [r, al] of [[Math.max(150, W * .22), .2], [64, .3]]) {
+        const g = ctx.createRadialGradient(x, y, 2, x, y, r);
+        g.addColorStop(0, rgba(col, al * n.act.x)); g.addColorStop(1, rgba(col, 0));
+        ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      }
+    }
+
+    // 24px grid anchored on the 0 dB line
+    ctx.lineWidth = 1; ctx.strokeStyle = C.grid; ctx.beginPath();
+    for (let x = .5; x < W; x += TU.grid) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+    for (let k = -half; k <= half; k++) { if (!k) continue; const y = Math.round(cy + k * TU.grid) + .5; ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+    ctx.strokeStyle = C.major; ctx.beginPath(); ctx.moveTo(0, Math.round(cy) + .5); ctx.lineTo(W, Math.round(cy) + .5); ctx.stroke();
+
+    // scale labels (11px, --tu-muted), faded when a bead sits on top of one
+    ctx.font = '11px ui-monospace, "SF Mono", Menlo, monospace'; ctx.fillStyle = C.muted; ctx.textBaseline = 'middle';
+    const beads = nodes.map(beadPos), near = (x, y) => beads.some(b => Math.abs(b[0] - x) < 26 && Math.abs(b[1] - y) < 12);
+    ctx.textAlign = 'left';
+    for (const db of [12, 6, 0, -6, -12]) { const y = Y(db); ctx.globalAlpha = near(14, y) ? .25 : 1; ctx.fillText((db > 0 ? '+' : db < 0 ? '−' : '') + Math.abs(db), 6, db ? y : y - 8); }
+    ctx.textAlign = 'center';
+    for (const [f, t] of [[100, '100'], [1000, '1k'], [10000, '10k']]) { const x = X(nxOf(f)); ctx.globalAlpha = near(x, H - 6) ? .25 : 1; ctx.fillText(t, x, H - 6); }
+    ctx.globalAlpha = 1;
+
+    // luminous spline (Catmull-Rom through the sampled response)
+    const N = Math.max(40, Math.round(W / 10)), pts = [];
+    for (let i = 0; i <= N; i++) pts.push([X(i / N), clamp(Y(response(lfOf(i / N))), 4, H - 4)]);
+    const path = () => {
+      ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 0; i < N; i++) {
+        const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(N, i + 2)];
+        ctx.bezierCurveTo(p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6, p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6, p2[0], p2[1]);
+      }
+    };
+    const lg = ctx.createLinearGradient(0, 0, W, 0); lg.addColorStop(0, rgba(C.a, 1)); lg.addColorStop(1, rgba(C.b, 1));
+    const fg = ctx.createLinearGradient(0, 0, W, 0); fg.addColorStop(0, rgba(C.a, .16)); fg.addColorStop(1, rgba(C.b, .16));
+    path(); ctx.lineTo(W, cy); ctx.lineTo(0, cy); ctx.closePath(); ctx.fillStyle = fg; ctx.fill();
+    ctx.save(); ctx.shadowColor = rgba(mixc(C.a, C.b, .5), .45); ctx.shadowBlur = 10;
+    path(); ctx.strokeStyle = lg; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.stroke(); ctx.restore();
+
+    for (const n of nodes) { // beads + ghost trails
+      const p = beadPos(n);
+      n.trail.draw(ctx, now, n.id === 'low' ? C.a : C.b, p[0], p[1], n.act.x, C.bead);
+      n.el.style.transform = `translate(${p[0].toFixed(2)}px, ${p[1].toFixed(2)}px)`;
+    }
+
+    // liquid capsule: stretch from spring velocity, sheen sweeps with it
+    const v = cp.x.v, s = Math.min(TU.response.maxStretch * cp.w.x, Math.abs(v) * TU.response.stretchFactor);
+    cap.style.width = (cp.w.x + s).toFixed(2) + 'px';
+    cap.style.transform = `translateX(${(cp.x.x - (v < 0 ? s : 0)).toFixed(2)}px)`;
+    sheen.style.transform = REDUCED ? 'none' : `translateX(${(clamp(v / 900, -1, 1) * 40).toFixed(1)}%)`;
+  }
+
+  /* 1:1 canvas: observe the container, derive height from width, size backing store by dpr */
+  function resize() {
+    const w = stage.getBoundingClientRect().width; if (!w) return;
+    dpr = Math.min(window.devicePixelRatio || 1, 3);
+    half = w < 560 ? 5 : 6; const h = TU.grid * (2 * half + 1);
+    if (w === W && h === H) return;
+    W = w; H = h;
+    stage.style.height = h + 'px'; cv.style.width = w + 'px'; cv.style.height = h + 'px';
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    layoutCap(true); wake(); render(performance.now());
+  }
+  new ResizeObserver(resize).observe(stage);
+  new IntersectionObserver(e => { visible = e[0].isIntersecting; if (visible) wake(); else if (raf) { cancelAnimationFrame(raf); raf = 0; } }).observe(stage);
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { readTokens(); wake(); });
+
+  /* Presets: a radiogroup */
+  function layoutCap(snap) {
+    const b = seg.querySelector(`[data-p="${lastPreset}"]`);
+    cp.x.t = b.offsetLeft; cp.w.t = b.offsetWidth;
+    if (snap) { cp.x.x = cp.x.t; cp.w.x = cp.w.t; cp.x.v = cp.w.v = 0; }
+  }
+  function setPreset(name, snap) {
+    preset = lastPreset = name; cap.classList.remove('custom');
+    $('pillt').textContent = name[0].toUpperCase() + name.slice(1); $('pill').classList.remove('custom');
+    seg.querySelectorAll('button').forEach(b => { const on = b.dataset.p === name; b.setAttribute('aria-checked', on); b.tabIndex = on ? 0 : -1; });
+    for (const n of nodes) {
+      const [f, g] = PRESETS[name][n.id];
+      n.nx.set(nxOf(f), TU.spring.lush); n.g.set(g, TU.spring.lush);
+      if (snap) { n.nx.x = n.nx.t; n.g.x = n.g.t; n.nx.v = n.g.v = 0; }
+    }
+    layoutCap(snap); aria(); wake();
+  }
+  const markCustom = () => { if (!preset) return; preset = null; cap.classList.add('custom'); $('pillt').textContent = 'Custom'; $('pill').classList.add('custom'); seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-checked', 'false')); };
+  seg.addEventListener('click', e => { const b = e.target.closest('button'); if (b) { navigator.vibrate?.(6); setPreset(b.dataset.p); } });
+  seg.addEventListener('keydown', e => {
+    const bs = [...seg.querySelectorAll('button')], i = bs.indexOf(document.activeElement);
+    if (i < 0 || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    e.preventDefault(); const nb = bs[(i + (e.key === 'ArrowRight' ? 1 : bs.length - 1)) % bs.length]; nb.focus(); setPreset(nb.dataset.p);
+  });
+
+  /* Nodes: one pointer, pointer capture, arrow-key nudge */
+  function setTarget(n, nx, g) {
+    n.nx.set(clamp(nx, n.range[0], n.range[1]), TU.spring.snappy); n.g.set(clamp(g, -n.gl, n.gl), TU.spring.snappy);
+    aria(); wake();
+  }
+  for (const n of nodes) {
+    const el = n.el; let drag = null;
+    el.addEventListener('pointerdown', e => {
+      if (drag) return; e.preventDefault(); el.setPointerCapture(e.pointerId);
+      const r = cv.getBoundingClientRect(), p = beadPos(n);
+      drag = { id: e.pointerId, dx: e.clientX - r.left - p[0], dy: e.clientY - r.top - p[1] };
+      dragging = active = n; el.classList.add('drag'); markCustom(); wake();
+    });
+    el.addEventListener('pointermove', e => {
+      if (!drag || drag.id !== e.pointerId) return;
+      const r = cv.getBoundingClientRect(), nx = clamp((e.clientX - r.left - drag.dx) / W, n.range[0], n.range[1]);
+      setTarget(n, nx, gainForDb(n, nx, dbOf(e.clientY - r.top - drag.dy)));
+    });
+    const end = () => { if (!drag) return; drag = null; if (dragging === n) dragging = null; el.classList.remove('drag'); wake(); };
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => el.addEventListener(t, end));
+    el.addEventListener('pointerenter', () => { if (!dragging) { active = n; wake(); } });
+    el.addEventListener('focus', () => { active = n; wake(); });
+    el.addEventListener('keydown', e => {
+      const k = e.shiftKey ? 4 : 1, fs = k / 12 * Math.log10(2) / (LF1 - LF0), gs = k * .5;
+      let nx = n.nx.t, g = n.g.t;
+      switch (e.key) { case 'ArrowLeft': nx -= fs; break; case 'ArrowRight': nx += fs; break; case 'ArrowDown': g -= gs; break; case 'ArrowUp': g += gs; break; default: return; }
+      e.preventDefault(); active = n; markCustom(); setTarget(n, nx, g);
+    });
+  }
+
+  readTokens(); resize(); setPreset('warm', true); readouts(); render(performance.now());
+  window.__tu = { asleep: () => raf === 0, setPreset };
+})();
+</script>
+</body>
+</html>
